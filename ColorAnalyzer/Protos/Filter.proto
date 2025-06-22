@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option csharp_namespace = "ImageFilter";
+
+package filters;
+
+service ImageFilterService {
+  rpc ApplyFilterStream (stream ImageFilterChunk) returns (stream ImageFilterChunk);
+}
+
+message ImageFilterChunk {
+  string image_id = 1;
+  int32 filter_type = 2;      // Agora um número inteiro em vez de enum
+  bytes data = 3;
+  int32 chunk_number = 4;
+  bool is_last = 5;
+}
