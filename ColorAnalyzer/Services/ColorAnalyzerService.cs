@@ -1,50 +1,82 @@
 using ColorAnalyzer;
-using ColorAnalyzer.Util;
 using Grpc.Core;
-using System.Drawing;
+using System.Numerics;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 public class ColorAnalyzerService : ColorAnalyzer.ColorAnalyzer.ColorAnalyzerBase
 {
-    public override async Task<ColorPalette> AnalyzeColors(
-        IAsyncStreamReader<ImageChunk> requestStream,
-        ServerCallContext context)
+    public override Task<ColorPalette> AnalyzeColors(ImageData request, ServerCallContext context)
     {
-        using var memoryStream = new MemoryStream();
+        var colors = ExtrairPaleta(request.ImageData_.ToByteArray());
 
-        while (await requestStream.MoveNext())
-        {
-            ServiceUtil.CheckContext(context);
-
-            var chunk = requestStream.Current;
-            memoryStream.Write(chunk.Data.ToByteArray());
-
-            if (chunk.IsLast)
-                break;
-        }
-
-        var colors = ExtrairPaleta(memoryStream.ToArray());
         var response = new ColorPalette();
         response.Colors.AddRange(colors);
-        return response;
+
+        return Task.FromResult(response);
     }
 
-    private List<string> ExtrairPaleta(byte[] imageBytes)
+    private List<string> ExtrairPaleta(byte[] imageBytes, int numColors = 5)
     {
-        using var ms = new MemoryStream(imageBytes);
-        using var bitmap = new Bitmap(ms);
+        using var image = Image.Load<Rgba32>(imageBytes);
 
-        var resized = new Bitmap(bitmap, new Size(50, 50));
-        var pixels = new List<Color>();
+        var pixels = new List<Vector3>();
 
-        for (int y = 0; y < resized.Height; y++)
-            for (int x = 0; x < resized.Width; x++)
-                pixels.Add(resized.GetPixel(x, y));
+        for (int y = 0; y < image.Height; y++)
+        {
+            for (int x = 0; x < image.Width; x++)
+            {
+                var p = image[x, y];
+                pixels.Add(new Vector3(p.R / 255f, p.G / 255f, p.B / 255f));
+            }
+        }
 
-        return pixels
-            .GroupBy(c => c)
-            .OrderByDescending(g => g.Count())
-            .Take(5)
-            .Select(c => $"#{c.Key.R:X2}{c.Key.G:X2}{c.Key.B:X2}")
+        var clusters = KMeansCluster(pixels, numColors);
+
+        return clusters
+            .Select(v => $"#{(int)(v.X * 255):X2}{(int)(v.Y * 255):X2}{(int)(v.Z * 255):X2}")
             .ToList();
+    }
+
+    private List<Vector3> KMeansCluster(List<Vector3> data, int k, int maxIterations = 10)
+    {
+        var rnd = new Random();
+        var centroids = data.OrderBy(_ => rnd.Next()).Take(k).ToArray();
+        var clusters = new int[data.Count];
+
+        for (int iter = 0; iter < maxIterations; iter++)
+        {
+            for (int i = 0; i < data.Count; i++)
+            {
+                float minDist = float.MaxValue;
+                for (int c = 0; c < k; c++)
+                {
+                    float dist = Vector3.Distance(data[i], centroids[c]);
+                    if (dist < minDist)
+                    {
+                        minDist = dist;
+                        clusters[i] = c;
+                    }
+                }
+            }
+
+            for (int c = 0; c < k; c++)
+            {
+                var clusterPoints = data.Where((_, i) => clusters[i] == c).ToList();
+                if (clusterPoints.Count > 0)
+                {
+                    centroids[c] = new Vector3(
+                        clusterPoints.Average(p => p.X),
+                        clusterPoints.Average(p => p.Y),
+                        clusterPoints.Average(p => p.Z)
+                    );
+                }
+            }
+        }
+
+        return centroids.ToList();
     }
 }

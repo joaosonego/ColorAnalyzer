@@ -16,7 +16,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Grpc.AspNetCore" Version="2.57.0" />
-		<PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.0.0" />
 	</ItemGroup>
 
 </Project>

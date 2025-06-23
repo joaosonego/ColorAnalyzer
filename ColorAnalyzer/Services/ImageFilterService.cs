@@ -2,8 +2,11 @@
 using ColorAnalyzer.Util;
 using Grpc.Core;
 using ImageFilter;
-using System.Drawing;
-using System.Drawing.Imaging;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using System.IO;
 
 public class ImageFilterService : ImageFilter.ImageFilterService.ImageFilterServiceBase
 {
@@ -60,73 +63,25 @@ public class ImageFilterService : ImageFilter.ImageFilterService.ImageFilterServ
 
     private byte[] ApplyFilter(byte[] imageBytes)
     {
-        using var inputStream = new MemoryStream(imageBytes);
-        using var original = new Bitmap(inputStream);
-        Bitmap filtered;
+        using var image = Image.Load<Rgba32>(imageBytes);
 
         switch (_filterType)
         {
             case TipoFiltro.Grayscale:
-                filtered = ApplyGrayscale(original);
+                image.Mutate(ctx => ctx.Grayscale());
                 break;
             case TipoFiltro.Sepia:
-                filtered = ApplySepia(original);
+                image.Mutate(ctx => ctx.Sepia());
                 break;
             case TipoFiltro.Negative:
-                filtered = ApplyNegative(original);
+                image.Mutate(ctx => ctx.Invert());
                 break;
             default:
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "Filtro não suportado"));
         }
 
         using var outputStream = new MemoryStream();
-        filtered.Save(outputStream, ImageFormat.Jpeg);
+        image.Save(outputStream, new JpegEncoder());
         return outputStream.ToArray();
-    }
-
-    // Filtros (sem alteração)
-    private Bitmap ApplyGrayscale(Bitmap original)
-    {
-        var result = new Bitmap(original.Width, original.Height);
-        for (int y = 0; y < original.Height; y++)
-            for (int x = 0; x < original.Width; x++)
-            {
-                var pixel = original.GetPixel(x, y);
-                int gray = (int)((pixel.R + pixel.G + pixel.B) / 3);
-                result.SetPixel(x, y, Color.FromArgb(gray, gray, gray));
-            }
-        return result;
-    }
-
-    private Bitmap ApplySepia(Bitmap original)
-    {
-        var result = new Bitmap(original.Width, original.Height);
-        for (int y = 0; y < original.Height; y++)
-            for (int x = 0; x < original.Width; x++)
-            {
-                var p = original.GetPixel(x, y);
-                int tr = (int)(0.393 * p.R + 0.769 * p.G + 0.189 * p.B);
-                int tg = (int)(0.349 * p.R + 0.686 * p.G + 0.168 * p.B);
-                int tb = (int)(0.272 * p.R + 0.534 * p.G + 0.131 * p.B);
-
-                tr = Math.Min(255, tr);
-                tg = Math.Min(255, tg);
-                tb = Math.Min(255, tb);
-
-                result.SetPixel(x, y, Color.FromArgb(tr, tg, tb));
-            }
-        return result;
-    }
-
-    private Bitmap ApplyNegative(Bitmap original)
-    {
-        var result = new Bitmap(original.Width, original.Height);
-        for (int y = 0; y < original.Height; y++)
-            for (int x = 0; x < original.Width; x++)
-            {
-                var p = original.GetPixel(x, y);
-                result.SetPixel(x, y, Color.FromArgb(255 - p.R, 255 - p.G, 255 - p.B));
-            }
-        return result;
     }
 }
